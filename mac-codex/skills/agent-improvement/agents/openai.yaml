@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent Improvement"
+  short_description: "Fix observed Codex workflow failures"
+  default_prompt: "Use $agent-improvement to audit this failure and apply the smallest useful fix."

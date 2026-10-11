@@ -1,0 +1,9 @@
+# Core tools for Codex on macOS. The installer skips commands already on PATH.
+brew "git"
+brew "gh"
+brew "ripgrep"
+brew "fd"
+brew "jq"
+brew "yq"
+brew "shellcheck"
+brew "shfmt"

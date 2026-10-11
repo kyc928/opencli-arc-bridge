@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mac Tools"
+  short_description: "Diagnose and use CLI tools on this Mac"
+  default_prompt: "Use $mac-tools to diagnose the Mac tools needed for this task."

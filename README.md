@@ -4,6 +4,18 @@ A community compatibility build of the [OpenCLI Browser Bridge](https://github.c
 
 The CLI and most extension code are upstream OpenCLI. This repository contains a small source patch, regression tests in that patch, a loadable extension, and a reproducible build script. It is not an official OpenCLI or Arc release.
 
+## Optional Mac/Codex setup
+
+The [Mac/Codex toolkit](mac-codex/README.md) provides a dry-run-first installer, a Homebrew tool list, a managed guidance block, and the `mac-tools` and `agent-improvement` skills. It includes backups, restore, a tool doctor, and a Codex skill-discovery check. This toolkit is optional; the Arc extension works independently.
+
+```sh
+cd mac-codex
+python3 scripts/install.py          # preview
+python3 scripts/install.py --apply  # install tools, guidance, and skills
+```
+
+Review `mac-codex/guidance/AGENTS.md` first: its browser preference is Arc, and you can edit that line to match your workflow. See the toolkit guide for prerequisites, verification, and restoring prior files.
+
 ## Why it exists
 
 On the tested Mac, the official extension installed correctly and could reach the local daemon, but startup waited indefinitely for tab-group recovery. A bounded read-only probe remained pending after three seconds. That prevented the worker's startup gate from completing and left `opencli doctor` reporting no connected extension.
