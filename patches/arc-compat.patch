@@ -1,0 +1,179 @@
+--- a/extension/src/background.ts
++++ b/extension/src/background.ts
+@@ -1,3 +1,4 @@
++// Modified for OpenCLI Arc compatibility: bounded read-only tab-group capability probe.
+ /**
+  * OpenCLI — Service Worker (background script).
+  *
+@@ -865,6 +866,43 @@
+   return { id: group.id, windowId: group.windowId, title: group.title };
+ }
+ 
++const OWNED_GROUP_PROBE_TIMEOUT_MS = 1500;
++let ownedGroupSupport: Promise<boolean> | null = null;
++
++function supportsOwnedContainerGroups(): Promise<boolean> {
++  if (ownedGroupSupport) return ownedGroupSupport;
++  ownedGroupSupport = (async () => {
++    if (
++      typeof chrome.tabGroups?.query !== 'function' ||
++      typeof chrome.tabGroups?.get !== 'function' ||
++      typeof chrome.tabGroups?.update !== 'function' ||
++      typeof chrome.tabs.group !== 'function'
++    ) return false;
++
++    let timer: ReturnType<typeof setTimeout> | undefined;
++    try {
++      // Some Chromium browsers expose tabGroups but leave its promises pending.
++      // Probe only a read: timing out group recovery itself could let late tab
++      // moves or grouping mutations run after startup has already continued.
++      const groups = await Promise.race([
++        Promise.resolve().then(() => chrome.tabGroups.query({ title: CONTAINER_TAB_GROUP_TITLE.interactive })),
++        new Promise<never>((_resolve, reject) => {
++          timer = setTimeout(() => reject(new Error('Tab group probe timed out')), OWNED_GROUP_PROBE_TIMEOUT_MS);
++        }),
++      ]);
++      return Array.isArray(groups);
++    } catch {
++      console.warn('[opencli] Tab grouping unavailable; using ungrouped owned tabs');
++      return false;
++    } finally {
++      if (timer !== undefined) clearTimeout(timer);
++    }
++  })();
++  // Cache the race result, so a late probe response cannot enable grouping in
++  // this worker after the ungrouped ownership path has been selected.
++  return ownedGroupSupport;
++}
++
+ async function ensureOwnedContainerGroup(
+   role: OwnedWindowRole,
+   fallbackWindowId: number | null,
+@@ -874,6 +912,7 @@
+   // a visible "OpenCLI Adapter" tab group. Its ownership anchors are the
+   // persisted container windowId and per-lease preferredTabId.
+   if (role === 'automation') return null;
++  if (!await supportsOwnedContainerGroups()) return null;
+ 
+   const ids = [...new Set(tabIds.filter((id): id is number => id !== undefined))];
+ 
+--- a/extension/src/background.test.ts
++++ b/extension/src/background.test.ts
+@@ -1,3 +1,4 @@
++// Modified for OpenCLI Arc compatibility: bounded read-only tab-group capability probe.
+ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+ 
+ type Listener<T extends (...args: any[]) => void> = {
+@@ -2036,6 +2037,112 @@
+     };
+   }
+ 
++  it('connects after a stalled group probe without bypassing recovery or accepting a late probe result', async () => {
++    vi.useFakeTimers();
++    const { chrome } = createChromeMock();
++    const groupProbe = deferred<MockTabGroup[]>();
++    chrome.tabGroups.query.mockImplementation(() => groupProbe.promise);
++    vi.stubGlobal('chrome', chrome);
++    const ping = vi.fn(async () => ({ ok: true }));
++    vi.stubGlobal('fetch', ping);
++    await chrome.storage.session.set({
++      [REGISTRY_KEY]: {
++        version: 2,
++        ownedContainers: {
++          interactive: { windowId: 1, groupIds: [200] },
++          automation: { windowId: null },
++        },
++        leases: {
++          [browserKey('owned')]: {
++            windowId: 1, owned: true, preferredTabId: 1,
++            idleDeadlineAt: 0, updatedAt: Date.now(),
++          },
++          [browserKey('borrowed')]: {
++            windowId: 2, owned: false, preferredTabId: 2,
++            idleDeadlineAt: 0, updatedAt: Date.now(),
++          },
++        },
++      },
++    });
++    const { gate } = gateRegistryRead(chrome);
++    const mod = await import('./background');
++    await vi.advanceTimersByTimeAsync(0);
++    expect(chrome.tabGroups.query).not.toHaveBeenCalled();
++    expect(ping).not.toHaveBeenCalled();
++
++    gate.resolve();
++    await vi.advanceTimersByTimeAsync(0);
++    expect(chrome.tabGroups.query).toHaveBeenCalledTimes(1);
++    expect(ping).not.toHaveBeenCalled();
++    await vi.advanceTimersByTimeAsync(1500);
++
++    expect(ping).toHaveBeenCalledTimes(1);
++    expect(MockWebSocket.instances).toHaveLength(1);
++    expect(mod.__test__.getSession(browserKey('owned'))).toEqual(expect.objectContaining({
++      owned: true, preferredTabId: 1, windowId: 1,
++    }));
++    expect(mod.__test__.getSession(browserKey('borrowed'))).toEqual(expect.objectContaining({
++      owned: false, kind: 'bound', preferredTabId: 2, windowId: 2,
++    }));
++    expect(mod.__test__.getInteractiveContainer()).toEqual({
++      windowId: 1, groupId: null, groupIds: [200],
++    });
++
++    groupProbe.resolve([{ id: 200, windowId: 1, title: 'OpenCLI Browser' }]);
++    await vi.advanceTimersByTimeAsync(0);
++    expect(await mod.__test__.ensureOwnedContainerGroup('interactive', 1, [1])).toBeNull();
++    expect(chrome.tabGroups.query).toHaveBeenCalledTimes(1);
++    expect(chrome.tabGroups.get).not.toHaveBeenCalled();
++    expect(chrome.tabGroups.update).not.toHaveBeenCalled();
++    expect(chrome.tabs.group).not.toHaveBeenCalled();
++    expect(chrome.tabs.ungroup).not.toHaveBeenCalled();
++    expect(chrome.tabs.move).not.toHaveBeenCalled();
++    mod.__test__.resetReconnectState();
++  });
++
++  it.each(['rejected', 'missing'] as const)('keeps owned tabs isolated when the grouping API is %s', async (failure) => {
++    const { chrome, tabs, create } = createChromeMock();
++    const groupApi = chrome.tabGroups;
++    if (failure === 'rejected') groupApi.query.mockRejectedValue(new Error('Grouping unsupported'));
++    else (chrome as any).tabGroups = undefined;
++    vi.stubGlobal('chrome', chrome);
++    await chrome.storage.session.set({
++      [REGISTRY_KEY]: {
++        version: 2,
++        ownedContainers: {
++          interactive: { windowId: 2, groupIds: [200] },
++          automation: { windowId: null },
++        },
++        leases: {},
++      },
++    });
++    const userTab = { ...tabs[1] };
++    const mod = await import('./background');
++    expect(await mod.__test__.ensureOwnedContainerGroup('interactive', 2, [2])).toBeNull();
++    await new Promise((resolve) => setTimeout(resolve, 0));
++
++    const result = await mod.__test__.handleTabs({
++      id: 'ungrouped-new', action: 'tabs', op: 'new', url: 'https://owned.example',
++    }, browserKey('arc'));
++    expect(result.ok).toBe(true);
++    expect(mod.__test__.getInteractiveContainer()).toEqual({
++      windowId: 2, groupId: null, groupIds: [200],
++    });
++    expect(create).toHaveBeenCalledWith({ windowId: 2, url: 'https://owned.example', active: true });
++    expect(mod.__test__.getSession(browserKey('arc'))).toEqual(expect.objectContaining({
++      owned: true, windowId: 2,
++    }));
++    expect(tabs[1]).toEqual(userTab);
++    expect(chrome.windows.create).not.toHaveBeenCalled();
++    expect(chrome.windows.remove).not.toHaveBeenCalled();
++    expect(groupApi.query).toHaveBeenCalledTimes(failure === 'rejected' ? 1 : 0);
++    expect(groupApi.get).not.toHaveBeenCalled();
++    expect(groupApi.update).not.toHaveBeenCalled();
++    expect(chrome.tabs.group).not.toHaveBeenCalled();
++    expect(chrome.tabs.ungroup).not.toHaveBeenCalled();
++    expect(chrome.tabs.move).not.toHaveBeenCalled();
++  });
++
+   it('does not wipe the persisted registry when a lease idle alarm fires before recovery', async () => {
+     const { chrome, groups } = createChromeMock();
+     const deadline = Date.now() + 30_000;

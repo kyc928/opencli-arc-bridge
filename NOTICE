@@ -1,0 +1,9 @@
+OpenCLI Arc compatibility bridge
+Derived from OpenCLI, Copyright 2025 jackwener.
+Upstream: https://github.com/jackwener/OpenCLI
+Licensed under Apache-2.0.
+
+Modified files: extension/src/background.ts, extension/src/background.test.ts,
+extension/dist/background.js, and extension/manifest.json. Changes add a bounded
+read-only tab-group probe, regression tests, and a distinct extension display name.
+This community build is not affiliated with OpenCLI or The Browser Company.

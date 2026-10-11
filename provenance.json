@@ -1,0 +1,17 @@
+{
+  "source": "https://github.com/jackwener/OpenCLI",
+  "source_ref": "8271afc67e8504bda94c147f446ee29775d08274",
+  "patch_sha256": "79d431994a96346d13c935972ded5e444358f3b1442c809c88d32c9bbaa882f4",
+  "files": {
+    "LICENSE": "0210b8b66cf00358242cb921ba2be3a46dfe0190159b1b952388a3880ce1ff54",
+    "NOTICE": "3036827f60eb782ac6ec052d06ec9c7b67cbf5cce999dee7b8b327c28d112a00",
+    "dist/background.js": "afdb50e24dbd13db8652de11ad86daeb584d011b47fe71026a7d7287e1f69cd5",
+    "icons/icon-128.png": "4b146c873a1f6e21f129e9d9ad7a6e56d48f64f536ef160468e967f265c424a4",
+    "icons/icon-16.png": "41f055dfbcfa48a06d81c2733d686a39ab6c4aae3efa1e26247dddf4fa00ec95",
+    "icons/icon-32.png": "415856e54bd712b13bc369b404cc0676080ad9fe5836bd82f5e066097ebc33e7",
+    "icons/icon-48.png": "60a028b636ae832d995158ecec742c47cad7784187ab06108410154194217184",
+    "manifest.json": "8d43913a829426cc3d17d0b6c1688851280393540d090dbea59d67b4b905132a",
+    "popup.html": "37215847a4be981631c457678a1125f44ba8d2d1859973290f2bfc1e01b35a9d",
+    "popup.js": "e2422dafc81ea9c83d5d6b483dd6ad08c84ffcc922a46be4cd64b95e23e3c3b3"
+  }
+}
